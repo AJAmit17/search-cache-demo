@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
 import React, { useEffect, useState } from 'react';
@@ -54,7 +55,7 @@ const MediaForm = () => {
                 const response = await fetch('/api/media/series');
                 if (response.ok) {
                     const data = await response.json();
-                    setTvSeriesList(data); 
+                    setTvSeriesList(data);
                 }
             } catch (error) {
                 console.error('Failed to load TV Series:', error);
@@ -308,7 +309,7 @@ const MediaForm = () => {
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {tvSeriesList.length > 0 ? (
-                                                            tvSeriesList.map((series) => (
+                                                            tvSeriesList.map((series: { id: string; title: string }) => (
                                                                 <SelectItem key={series.id} value={series.id}>
                                                                     {series.title}
                                                                 </SelectItem>
