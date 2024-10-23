@@ -1,10 +1,8 @@
-// lib/redis.ts
 import { createClient } from 'redis';
 import { SearchResults } from '@/types/search';
 import { SEARCH_CONSTANTS } from './constant';
 import prisma from "@/lib/prisma";
 
-// Initialize Redis client
 const client = createClient({
     password: process.env.REDIS_PASSWORD || '',
     socket: {
@@ -13,22 +11,18 @@ const client = createClient({
     }
 });
 
-// Connect to Redis
 client.connect().catch((err) => {
     console.error('Redis connection error:', err);
 });
 
-// Handle Redis errors
 client.on('error', (err) => {
     console.error('Redis Client Error:', err);
 });
 
-// Generate cache key for search results
 const generateCacheKey = (query: string, type: string): string => {
     return `search:${type}:${query.toLowerCase()}`;
 };
 
-// Get cached search results from Redis
 export async function getCachedSearchResults(query: string, type: string): Promise<SearchResults | null> {
     const cacheKey = generateCacheKey(query, type);
     
@@ -44,7 +38,6 @@ export async function getCachedSearchResults(query: string, type: string): Promi
     }
 }
 
-// Set search results in Redis cache
 export async function setCachedSearchResults(
     query: string, 
     type: string, 
@@ -65,7 +58,6 @@ export async function setCachedSearchResults(
     }
 }
 
-// Clear cache for a specific search query
 export async function clearSearchCache(query: string, type: string): Promise<void> {
     const cacheKey = generateCacheKey(query, type);
     
@@ -76,7 +68,6 @@ export async function clearSearchCache(query: string, type: string): Promise<voi
     }
 }
 
-// Clear all search caches
 export async function clearAllSearchCaches(): Promise<void> {
     try {
         const keys = await client.keys('search:*');
@@ -88,7 +79,6 @@ export async function clearAllSearchCaches(): Promise<void> {
     }
 }
 
-// Get search results with Redis caching
 export async function getSearchResults(
     query: string,
     type: string
@@ -96,7 +86,6 @@ export async function getSearchResults(
     if (!query) return { movies: [], tvSeries: [], episodes: [] };
 
     try {
-        // Try to get cached results first
         const cachedResults = await getCachedSearchResults(query, type);
         if (cachedResults) {
             console.log('Cache hit for:', query, type);
@@ -105,7 +94,6 @@ export async function getSearchResults(
 
         console.log('Cache miss for:', query, type);
 
-        // If no cached results, perform database search
         const searchCondition = {
             contains: query,
             mode: 'insensitive' as const
@@ -180,7 +168,6 @@ export async function getSearchResults(
             episodes: results[2]
         };
 
-        // Cache the results
         await setCachedSearchResults(query, type, searchResults);
         console.log('Cached results for:', query, type);
 
@@ -191,7 +178,6 @@ export async function getSearchResults(
     }
 }
 
-// Graceful shutdown
 export async function closeRedisConnection(): Promise<void> {
     try {
         await client.quit();
