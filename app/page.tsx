@@ -1,5 +1,3 @@
-// app/page.tsx
-
 import Search from "@/components/search";
 
 export default function Home() {
