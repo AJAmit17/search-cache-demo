@@ -2,6 +2,15 @@ import { createClient } from 'redis';
 import { SearchResults } from '@/types/search';
 import { SEARCH_CONSTANTS } from './constant';
 import prisma from "@/lib/prisma";
+import { calculateJaccardSimilarity } from './jaccord';
+
+const SIMILARITY_THRESHOLD = 0.2;
+
+const LOG_COLORS = {
+    BG_BLUE: '\x1b[44m',    
+    FG_WHITE: '\x1b[37m',   
+    RESET: '\x1b[0m'        
+  } as const;
 
 const client = createClient({
     password: process.env.REDIS_PASSWORD || '',
@@ -23,9 +32,15 @@ const generateCacheKey = (query: string, type: string): string => {
     return `search:${type}:${query.toLowerCase()}`;
 };
 
+function logSimilarityScore(itemType: string, itemTitle: string, matchField: string, query: string, score: number) {
+    console.log(
+        `${LOG_COLORS.BG_BLUE}${LOG_COLORS.FG_WHITE}[Jaccard]${LOG_COLORS.RESET} ${itemType} - "${itemTitle}" ${matchField} score: ${score.toFixed(3)} for query "${query}"`
+    );
+}
+
 export async function getCachedSearchResults(query: string, type: string): Promise<SearchResults | null> {
     const cacheKey = generateCacheKey(query, type);
-    
+
     try {
         const cachedData = await client.get(cacheKey);
         if (cachedData) {
@@ -39,16 +54,16 @@ export async function getCachedSearchResults(query: string, type: string): Promi
 }
 
 export async function setCachedSearchResults(
-    query: string, 
-    type: string, 
+    query: string,
+    type: string,
     results: SearchResults
 ): Promise<void> {
     const cacheKey = generateCacheKey(query, type);
-    
+
     try {
         await client.set(
-            cacheKey, 
-            JSON.stringify(results), 
+            cacheKey,
+            JSON.stringify(results),
             {
                 EX: SEARCH_CONSTANTS.CACHE_TIME
             }
@@ -60,7 +75,7 @@ export async function setCachedSearchResults(
 
 export async function clearSearchCache(query: string, type: string): Promise<void> {
     const cacheKey = generateCacheKey(query, type);
-    
+
     try {
         await client.del(cacheKey);
     } catch (error) {
@@ -162,16 +177,58 @@ export async function getSearchResults(
                 }) : Promise.resolve([])
         ]);
 
-        const searchResults = {
-            movies: results[0],
-            tvSeries: results[1],
-            episodes: results[2]
+        // <--- Simple Query results--->
+        // const searchResults = {
+        //     movies: results[0],
+        //     tvSeries: results[1],
+        //     episodes: results[2]
+        // };
+
+        // <--- Jaccobe Similarity Query results--->
+        const filteredResults = {
+            movies: results[0].filter(movie => {
+                const titleScore = calculateJaccardSimilarity(movie.title, query);
+                const directorScore = calculateJaccardSimilarity(movie.director || '', query);
+                logSimilarityScore('Movie', movie.title, 'title', query, titleScore);
+                logSimilarityScore('Movie', movie.title, 'director', query, directorScore);
+                return titleScore > SIMILARITY_THRESHOLD || directorScore > SIMILARITY_THRESHOLD;
+            }).sort((a, b) =>
+                calculateJaccardSimilarity(b.title, query) -
+                calculateJaccardSimilarity(a.title, query)
+            ),
+
+            tvSeries: results[1].filter(series => {
+                const titleScore = calculateJaccardSimilarity(series.title, query);
+                const directorScore = calculateJaccardSimilarity(series.director || '', query);
+                logSimilarityScore('TV Series', series.title, 'title', query, titleScore);
+                logSimilarityScore('TV Series', series.title, 'director', query, directorScore);
+                return titleScore > SIMILARITY_THRESHOLD || directorScore > SIMILARITY_THRESHOLD;
+            }).sort((a, b) =>
+                calculateJaccardSimilarity(b.title, query) -
+                calculateJaccardSimilarity(a.title, query)
+            ),
+
+            episodes: results[2].filter(episode => {
+                const titleScore = calculateJaccardSimilarity(episode.title, query);
+                const seriesTitleScore = calculateJaccardSimilarity(episode.tvSeries.title, query);
+                logSimilarityScore('Episode', episode.title, 'title', query, titleScore);
+                logSimilarityScore('Episode', episode.title, 'series title', query, seriesTitleScore);
+                return titleScore > SIMILARITY_THRESHOLD || seriesTitleScore > SIMILARITY_THRESHOLD;
+            }).sort((a, b) =>
+                calculateJaccardSimilarity(b.title, query) -
+                calculateJaccardSimilarity(a.title, query)
+            )
         };
 
-        await setCachedSearchResults(query, type, searchResults);
+        // await setCachedSearchResults(query, type, searchResults);
+        // console.log('Cached results for:', query, type);
+
+        // return searchResults;
+
+        await setCachedSearchResults(query, type, filteredResults);
         console.log('Cached results for:', query, type);
 
-        return searchResults;
+        return filteredResults;
     } catch (error) {
         console.error('Search error:', error);
         throw error;
